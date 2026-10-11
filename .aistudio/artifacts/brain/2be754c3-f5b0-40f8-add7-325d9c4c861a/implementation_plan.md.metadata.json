@@ -1,0 +1,6 @@
+{
+  "summary":  "Mise à jour du plan d'implémentation intégrant le workflow à 4 statuts (TERMINE, NON TERMINE, EN COURS, VALIDE), le système de notation binaire (1 pour TERMINE provisoire et VALIDE par la Présidente, 0 pour le reste), le double calcul du taux et de la prime (provisoire vs validée), et le mode d'approbation Présidence.",
+  "updatedAt":  "2026-10-11T08:35:52.147873440Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

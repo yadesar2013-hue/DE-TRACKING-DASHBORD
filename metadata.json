@@ -1,0 +1,8 @@
+{
+  "name": "Remix Executive Performance Tracker — Fondation HYSTERESIS",
+  "description": "Outil de pilotage stratégique et d\u0027évaluation mensuelle du Directeur Exécutif aligné sur le COP et le PTA 2026, avec calcul des primes et intégration Google Drive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
