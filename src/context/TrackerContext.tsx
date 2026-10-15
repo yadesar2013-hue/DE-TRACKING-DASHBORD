@@ -14,6 +14,8 @@ import {
   saveSharedWorkspace,
   ShareData,
   ShareMetadata,
+  WorkspaceData,
+  ApiError,
 } from '../services/shareService';
 import {
   calculateCumulativeMonthlyStats,
@@ -54,6 +56,8 @@ interface TrackerContextType {
   activeShare: ShareMetadata | null;
   isLoadingShare: boolean;
   isCollaborativeSyncActive: boolean;
+  syncError: string | null;
+  exportBackup: () => void;
   lastSyncedAt: string | null;
   lastSyncAuthor: string | null;
   syncNotification: string | null;
@@ -75,81 +79,11 @@ interface TrackerContextType {
   exportCsvData: () => string;
 }
 
-const LOCAL_STORAGE_KEY = 'fondation_hysteresis_ept_tasks_v17_august_official_integrated';
-const PREVIOUS_STORAGE_KEYS = [
-  'fondation_hysteresis_ept_tasks_v16_june_rebalanced_dashboard',
-  'fondation_hysteresis_ept_tasks_v15_june_august_september_integrated',
-  'fondation_hysteresis_ept_tasks_v14_september_cop_integrated',
-  'fondation_hysteresis_ept_tasks_v13_august_cop_integrated',
-  'fondation_hysteresis_ept_tasks_v12_july_evaluation_clean_june',
-  'fondation_hysteresis_ept_tasks_v11_june_cop_integrated',
-  'fondation_hysteresis_ept_tasks_v10_mai_cop_integrated',
-  'fondation_hysteresis_ept_tasks_v9_differentiated_drive_links',
-  'fondation_hysteresis_ept_tasks_v8_pure_july_evaluation',
-  'fondation_hysteresis_ept_tasks_v7_declic_academy_scores',
-  'fondation_hysteresis_ept_tasks_v6',
-  'fondation_hysteresis_ept_tasks_v5',
-  'fondation_hysteresis_ept_tasks',
-];
-const LOCAL_STORAGE_BONUS_KEY = 'fondation_hysteresis_ept_bonus_base_150k';
-
 const TrackerContext = createContext<TrackerContextType | undefined>(undefined);
 
 export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [tasks, setTasks] = useState<TaskItem[]>(() => {
-    const initialJuneTasks = INITIAL_TASKS.filter((t) => t.month === 6);
-    const initialAugustTasks = INITIAL_TASKS.filter((t) => t.month === 8);
-    const initialSeptemberTasks = INITIAL_TASKS.filter((t) => t.month === 9);
-
-    try {
-      // 1. Purge proactive de tous les anciens stockages obsolètes
-      for (const oldKey of PREVIOUS_STORAGE_KEYS) {
-        try {
-          localStorage.removeItem(oldKey);
-        } catch (_) {}
-      }
-
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed: TaskItem[] = JSON.parse(saved);
-
-        const storedJuneTasks = parsed.filter((t) => t.month === 6);
-        const storedAugustTasks = parsed.filter((t) => t.month === 8);
-        const storedSeptemberTasks = parsed.filter((t) => t.month === 9);
-
-        let currentTasks = parsed;
-
-        // Contrôle d'intégrité pour Juin (51 tâches)
-        if (storedJuneTasks.length !== initialJuneTasks.length) {
-          const nonJuneTasks = currentTasks.filter((t) => t.month !== 6);
-          currentTasks = [...nonJuneTasks, ...initialJuneTasks];
-        }
-
-        // Contrôle d'intégrité pour Août (29 tâches)
-        if (storedAugustTasks.length !== initialAugustTasks.length) {
-          const nonAugustTasks = currentTasks.filter((t) => t.month !== 8);
-          currentTasks = [...nonAugustTasks, ...initialAugustTasks];
-        }
-
-        // Contrôle d'intégrité pour Septembre (17 tâches)
-        if (storedSeptemberTasks.length !== initialSeptemberTasks.length) {
-          const nonSeptemberTasks = currentTasks.filter((t) => t.month !== 9);
-          currentTasks = [...nonSeptemberTasks, ...initialSeptemberTasks];
-        }
-
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentTasks));
-        return currentTasks;
-      }
-    } catch (e) {
-      console.error('Erreur chargement localStorage:', e);
-    }
-
-    // Premier chargement ou absence de sauvegarde propre : charger les tâches initiales officielles
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(INITIAL_TASKS));
-    } catch (_) {}
-    return INITIAL_TASKS;
-  });
+  // Le cache n'est jamais une autorité : le serveur est chargé avant toute modification.
+  const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
 
   const [currentMonth, setCurrentMonth] = useState<number>(9); // Par défaut Septembre 2026 suite aux modifications intégrées
   const [role, setRole] = useState<UserRole>('DIRECTEUR_EXECUTIF');
@@ -170,267 +104,144 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     });
   };
 
-  const [baseBonusAmount, setBaseBonusAmount] = useState<number>(() => {
-    const saved = localStorage.getItem(LOCAL_STORAGE_BONUS_KEY);
-    return saved ? parseInt(saved, 10) : 150000; // 150 000 FCFA base mensuelle
-  });
-
-  const mobilizationTarget = 100000000; // 100 000 000 FCFA
-  const initialAnnualTotalTasks = 235; // Nombre global de tâches au PTA/COP en début d'année
-
+  const [baseBonusAmount, setBaseBonusAmount] = useState<number>(150000);
+  const mobilizationTarget = 100000000;
+  const initialAnnualTotalTasks = 235;
   const [activeShare, setActiveShare] = useState<ShareMetadata | null>(null);
-  const [isLoadingShare, setIsLoadingShare] = useState<boolean>(false);
-  const [isCollaborativeSyncActive, setIsCollaborativeSyncActive] = useState<boolean>(true);
+  const [isLoadingShare, setIsLoadingShare] = useState(true);
+  const [isCollaborativeSyncActive, setIsCollaborativeSyncActive] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [lastSyncAuthor, setLastSyncAuthor] = useState<string | null>(null);
   const [syncNotification, setSyncNotification] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const clearSyncNotification = () => setSyncNotification(null);
-
-  // Ref pour éviter les boucles infinies de synchronisation
-  const lastLocalUpdateTimestampRef = React.useRef<number>(Date.now());
-  const isUpdatingFromRemoteRef = React.useRef<boolean>(false);
-
-  // Détection d'un paramètre ?share= dans l'URL au chargement
-  useEffect(() => {
+  const scope = React.useRef<string | null>(new URLSearchParams(window.location.search).get('share'));
+  const revision = React.useRef(0);
+  const initialized = React.useRef(false);
+  const busy = React.useRef(false);
+  const conflict = React.useRef(false);
+  const generation = React.useRef(0);
+  const cleanSignature = React.useRef('');
+  const latest = React.useRef({ tasks, currentMonth, baseBonusAmount, role });
+  latest.current = { tasks, currentMonth, baseBonusAmount, role };
+  const signature = (value: { tasks: TaskItem[]; baseBonusAmount: number }) => JSON.stringify([value.tasks, value.baseBonusAmount]);
+  const backup = () => {
+    const payload = JSON.stringify({ ...latest.current, savedAt: new Date().toISOString(), shareId: scope.current }, null, 2);
+    // Chaque récupération conserve une copie distincte des saisies en attente.
+    try { localStorage.setItem(`ept_recovery_${Date.now()}`, payload); } catch (_) {}
+    return payload;
+  };
+  const exportBackup = () => {
+    const blob = new Blob([backup()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `sauvegarde-tracker-${Date.now()}.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const applyRemote = (remote: WorkspaceData | ShareData, initial = false) => {
+    if (!remote || !Array.isArray(remote.tasks) || !Number.isInteger(remote.revision)) throw new Error('Données partagées invalides.');
+    revision.current = remote.revision;
+    cleanSignature.current = signature(remote);
+    latest.current = { ...latest.current, tasks: remote.tasks, baseBonusAmount: remote.baseBonusAmount,
+      currentMonth: initial ? ('month' in remote ? remote.month : remote.currentMonth) : latest.current.currentMonth };
+    setTasks(remote.tasks);
+    setBaseBonusAmount(remote.baseBonusAmount);
+    if (initial) setCurrentMonth(latest.current.currentMonth);
+    if ('id' in remote) { const { tasks: _, ...meta } = remote; setActiveShare(meta); }
+    setLastSyncedAt(new Date(remote.updatedAt || ('createdAt' in remote ? remote.createdAt : Date.now())).toLocaleTimeString('fr-FR'));
+    setLastSyncAuthor(remote.lastModifiedBy || ('author' in remote ? remote.author : 'Collaborateur'));
+    setIsCollaborativeSyncActive(true); setSyncError(null);
+    initialized.current = true;
+  };
+  const fetchRemote = () => scope.current ? getCloudShare(scope.current) : getSharedWorkspace();
+  const initialize = async () => {
+    const version = ++generation.current;
+    setIsLoadingShare(true);
     try {
-      const params = new URLSearchParams(window.location.search);
-      const shareId = params.get('share');
-      if (shareId) {
-        setIsLoadingShare(true);
-        getCloudShare(shareId)
-          .then((snapshot) => {
-            if (snapshot && Array.isArray(snapshot.tasks)) {
-              isUpdatingFromRemoteRef.current = true;
-              setTasks(snapshot.tasks);
-              if (snapshot.month) setCurrentMonth(snapshot.month);
-              if (snapshot.baseBonusAmount) setBaseBonusAmount(snapshot.baseBonusAmount);
-              const { tasks: _, ...meta } = snapshot;
-              setActiveShare(meta);
-              setLastSyncedAt(new Date().toLocaleTimeString('fr-FR'));
-              setLastSyncAuthor(snapshot.author || 'Collaborateur');
-            }
-          })
-          .catch((err) => {
-            console.error('Erreur chargement partage URL:', err);
-          })
-          .finally(() => {
-            setIsLoadingShare(false);
-            setTimeout(() => {
-              isUpdatingFromRemoteRef.current = false;
-            }, 500);
-          });
-      } else {
-        // Tenter de charger l'espace de travail partagé global si disponible
-        getSharedWorkspace()
-          .then((ws) => {
-            if (ws && Array.isArray(ws.tasks) && ws.tasks.length > 0) {
-              // Vérifier si le workspace partagé a été mis à jour récemment
-              const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-              if (!saved) {
-                isUpdatingFromRemoteRef.current = true;
-                setTasks(ws.tasks);
-                if (ws.currentMonth) setCurrentMonth(ws.currentMonth);
-                setLastSyncedAt(new Date(ws.updatedAt).toLocaleTimeString('fr-FR'));
-                setLastSyncAuthor(ws.lastModifiedBy || 'Collaborateur');
-                setTimeout(() => {
-                  isUpdatingFromRemoteRef.current = false;
-                }, 500);
-              }
-            }
-          })
-          .catch(() => {});
-      }
-    } catch (e) {
-      console.error('Erreur lecture paramètres URL:', e);
-    }
-  }, []);
+      const remote = await fetchRemote();
+      if (version !== generation.current) return;
+      applyRemote(remote, true);
+      conflict.current = false;
+    } catch (error: any) {
+      if (version !== generation.current) return;
+      setSyncError(error.message || 'Chargement partagé impossible.');
+      setIsCollaborativeSyncActive(false);
+    } finally { if (version === generation.current) setIsLoadingShare(false); }
+  };
+  useEffect(() => { initialize(); return () => { generation.current++; }; }, []);
 
   const loadSharedSnapshot = (snapshot: ShareData) => {
-    if (snapshot && Array.isArray(snapshot.tasks)) {
-      isUpdatingFromRemoteRef.current = true;
-      setTasks(snapshot.tasks);
-      if (snapshot.month) setCurrentMonth(snapshot.month);
-      if (snapshot.baseBonusAmount) setBaseBonusAmount(snapshot.baseBonusAmount);
-      const { tasks: _, ...meta } = snapshot;
-      setActiveShare(meta);
-      setLastSyncedAt(new Date().toLocaleTimeString('fr-FR'));
-      setLastSyncAuthor(snapshot.author || 'Collaborateur');
-      // Mettre à jour l'URL sans rechargement
-      const url = new URL(window.location.href);
-      url.searchParams.set('share', snapshot.id);
-      window.history.replaceState({}, '', url.toString());
-      setTimeout(() => {
-        isUpdatingFromRemoteRef.current = false;
-      }, 500);
-    }
+    if (initialized.current && signature(latest.current) !== cleanSignature.current) backup();
+    generation.current++;
+    scope.current = snapshot.id; conflict.current = false;
+    applyRemote(snapshot, true);
+    const url = new URL(window.location.href); url.searchParams.set('share', snapshot.id);
+    window.history.replaceState({}, '', url);
   };
-
   const exitSharedView = () => {
-    setActiveShare(null);
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        setTasks(JSON.parse(saved));
-      } else {
-        setTasks(INITIAL_TASKS);
-      }
-      const savedBonus = localStorage.getItem(LOCAL_STORAGE_BONUS_KEY);
-      if (savedBonus) {
-        setBaseBonusAmount(parseInt(savedBonus, 10));
-      }
-    } catch (e) {
-      setTasks(INITIAL_TASKS);
-    }
-    // Nettoyer l'URL
-    const url = new URL(window.location.href);
-    url.searchParams.delete('share');
-    window.history.replaceState({}, '', url.pathname);
+    if (signature(latest.current) !== cleanSignature.current && !window.confirm('Des modifications ne sont pas encore synchronisées. Conserver une copie locale et quitter ?')) return;
+    backup(); generation.current++; initialized.current = false;
+    scope.current = null; setActiveShare(null);
+    const url = new URL(window.location.href); url.searchParams.delete('share');
+    window.history.replaceState({}, '', url);
+    initialize();
   };
 
-  // Synchronisation automatique vers le Cloud et localStorage dès qu'un utilisateur fait un ajustement
-  useEffect(() => {
-    if (isUpdatingFromRemoteRef.current) return;
-
-    lastLocalUpdateTimestampRef.current = Date.now();
-
-    // 1. Sauvegarde locale persistante
+  const syncCycle = async () => {
+    if (!initialized.current || busy.current || conflict.current) return;
+    busy.current = true;
+    const version = generation.current;
+    const id = scope.current;
+    const state = latest.current;
+    const sentSignature = signature(state);
+    const dirty = sentSignature !== cleanSignature.current;
     try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
-    } catch (e) {
-      console.error('Erreur sauvegarde localStorage:', e);
-    }
-
-    const currentAuthor =
-      role === 'PRESIDENTE' ? 'Présidence — Mme Cheryle IDOSSOU' : 'Directeur Exécutif — M. Arsène YADES';
-
-    // 2. Si un lien partagé est actif, mettre à jour la session dans le Cloud
-    if (activeShare && activeShare.id) {
-      updateCloudShare(activeShare.id, {
-        tasks,
-        currentMonth,
-        baseBonusAmount,
-        author: currentAuthor,
-        role,
-      }).then(() => {
-        setLastSyncedAt(new Date().toLocaleTimeString('fr-FR'));
-        setLastSyncAuthor('Moi');
-      });
-    }
-
-    // 3. Sauvegarder également dans le workspace collaboratif partagé
-    saveSharedWorkspace({
-      tasks,
-      currentMonth,
-      baseBonusAmount,
-      role,
-      lastModifiedBy: currentAuthor,
-    }).catch(() => {});
-  }, [tasks, currentMonth, baseBonusAmount, role, activeShare]);
-
+      if (dirty) {
+        const author = state.role === 'PRESIDENTE' ? 'Présidence — Mme Cheryle IDOSSOU' : 'Directeur Exécutif — M. Arsène YADES';
+        const params = { ...state, expectedRevision: revision.current, author, lastModifiedBy: author };
+        const saved = id ? await updateCloudShare(id, params) : await saveSharedWorkspace(params);
+        if (version !== generation.current) return;
+        revision.current = saved.revision;
+        cleanSignature.current = sentSignature;
+        setLastSyncedAt(new Date().toLocaleTimeString('fr-FR')); setLastSyncAuthor('Moi');
+        // Les modifications faites pendant la requête restent en attente, sans être remplacées.
+      } else {
+        const remote = await fetchRemote();
+        if (version !== generation.current || signature(latest.current) !== sentSignature) return;
+        if (remote.revision !== revision.current) applyRemote(remote);
+      }
+      setSyncError(null); setIsCollaborativeSyncActive(true);
+    } catch (error: any) {
+      if (version !== generation.current) return;
+      if (error instanceof ApiError && error.status === 409) { backup(); conflict.current = true; }
+      setSyncError(error.message || 'Synchronisation impossible.');
+      setIsCollaborativeSyncActive(false);
+    } finally { busy.current = false; }
+  };
+  const cycleRef = React.useRef(syncCycle); cycleRef.current = syncCycle;
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_BONUS_KEY, baseBonusAmount.toString());
-  }, [baseBonusAmount]);
-
-  // Synchronisation manuelle déclenchable par l'utilisateur
+    const interval = setInterval(() => cycleRef.current(), 5000);
+    const focus = () => { cycleRef.current(); };
+    window.addEventListener('focus', focus);
+    return () => { clearInterval(interval); window.removeEventListener('focus', focus); };
+  }, []);
+  useEffect(() => {
+    if (!initialized.current) return;
+    try {
+      const key = scope.current ? `ept_shared_cache_${scope.current}` : 'ept_workspace_cache_v18';
+      localStorage.setItem(key, JSON.stringify({ tasks, baseBonusAmount, currentMonth }));
+    } catch (_) {}
+    const timeout = setTimeout(() => cycleRef.current(), 650);
+    return () => clearTimeout(timeout);
+  }, [tasks, baseBonusAmount]);
   const syncNow = async () => {
-    try {
-      if (activeShare && activeShare.id) {
-        const remoteShare = await getCloudShare(activeShare.id);
-        if (remoteShare && Array.isArray(remoteShare.tasks)) {
-          isUpdatingFromRemoteRef.current = true;
-          setTasks(remoteShare.tasks);
-          setLastSyncedAt(new Date().toLocaleTimeString('fr-FR'));
-          setLastSyncAuthor(remoteShare.lastModifiedBy || remoteShare.author || 'Collaborateur');
-          setSyncNotification(
-            `Synchronisation réussie avec ${remoteShare.lastModifiedBy || remoteShare.author || 'le cloud'} (${new Date().toLocaleTimeString('fr-FR')})`
-          );
-          setTimeout(() => {
-            isUpdatingFromRemoteRef.current = false;
-          }, 500);
-        }
-      } else {
-        const ws = await getSharedWorkspace();
-        if (ws && Array.isArray(ws.tasks) && ws.tasks.length > 0) {
-          isUpdatingFromRemoteRef.current = true;
-          setTasks(ws.tasks);
-          setLastSyncedAt(new Date(ws.updatedAt).toLocaleTimeString('fr-FR'));
-          setLastSyncAuthor(ws.lastModifiedBy || 'Collaborateur');
-          setSyncNotification(
-            `Espace collaboratif synchronisé avec succès (${new Date(ws.updatedAt).toLocaleTimeString('fr-FR')})`
-          );
-          setTimeout(() => {
-            isUpdatingFromRemoteRef.current = false;
-          }, 500);
-        }
-      }
-    } catch (e) {
-      console.warn('Erreur lors de la synchronisation manuelle:', e);
+    if (!initialized.current) { await initialize(); return; }
+    if (conflict.current) {
+      if (!window.confirm('Une version plus récente existe. Exporter vos modifications en fichier JSON puis charger cette version ?')) return;
+      exportBackup(); initialized.current = false; await initialize(); return;
     }
+    await cycleRef.current();
   };
-
-  // Polling collaboratif périodique : vérifie toutes les 2.5 secondes si un autre collaborateur a fait un ajustement
-  useEffect(() => {
-    const checkRemoteSync = async () => {
-      // Ne pas écraser si l'utilisateur vient de faire une modification locale il y a moins de 1.5 secondes
-      if (Date.now() - lastLocalUpdateTimestampRef.current < 1500) {
-        return;
-      }
-
-      try {
-        if (activeShare && activeShare.id) {
-          const remoteShare = await getCloudShare(activeShare.id);
-          if (remoteShare && Array.isArray(remoteShare.tasks)) {
-            const remoteTasksStr = JSON.stringify(remoteShare.tasks);
-            const currentTasksStr = JSON.stringify(tasks);
-            if (remoteTasksStr !== currentTasksStr) {
-              isUpdatingFromRemoteRef.current = true;
-              setTasks(remoteShare.tasks);
-              setLastSyncedAt(new Date().toLocaleTimeString('fr-FR'));
-              setLastSyncAuthor(remoteShare.lastModifiedBy || remoteShare.author || 'Collaborateur');
-              setSyncNotification(
-                `Ajustement en direct reçu de ${remoteShare.lastModifiedBy || remoteShare.author || 'votre collaborateur'} (${new Date().toLocaleTimeString('fr-FR')})`
-              );
-              setTimeout(() => {
-                isUpdatingFromRemoteRef.current = false;
-              }, 500);
-            }
-          }
-        } else {
-          // Hors session de partage explicite, vérifier le workspace global
-          const ws = await getSharedWorkspace();
-          if (ws && Array.isArray(ws.tasks)) {
-            const remoteTasksStr = JSON.stringify(ws.tasks);
-            const currentTasksStr = JSON.stringify(tasks);
-            if (remoteTasksStr !== currentTasksStr) {
-              const remoteTime = new Date(ws.updatedAt).getTime();
-              if (remoteTime > lastLocalUpdateTimestampRef.current + 800) {
-                isUpdatingFromRemoteRef.current = true;
-                setTasks(ws.tasks);
-                setLastSyncedAt(new Date(ws.updatedAt).toLocaleTimeString('fr-FR'));
-                setLastSyncAuthor(ws.lastModifiedBy || 'Collaborateur');
-                setSyncNotification(
-                  `Ajustement synchronisé reçu de ${ws.lastModifiedBy || 'votre collaborateur'} (${new Date(ws.updatedAt).toLocaleTimeString('fr-FR')})`
-                );
-                setTimeout(() => {
-                  isUpdatingFromRemoteRef.current = false;
-                }, 500);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        // ignore polling errors
-      }
-    };
-
-    const interval = setInterval(checkRemoteSync, 2500);
-    window.addEventListener('focus', checkRemoteSync);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener('focus', checkRemoteSync);
-    };
-  }, [tasks, activeShare]);
 
   // Calcul des statistiques mensuelles pour chaque mois
   const allMonthlyStats = useMemo(() => {
@@ -653,7 +464,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const addNewTask = (newTaskData: Omit<TaskItem, 'id'>) => {
     const newTask: TaskItem = {
       ...newTaskData,
-      id: `task-custom-${Date.now()}`,
+      id: `task-custom-${crypto.randomUUID()}`,
     };
     setTasks((prev) => [newTask, ...prev]);
   };
@@ -689,7 +500,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (window.confirm("Êtes-vous sûr de vouloir réinitialiser l'ensemble des données au PTA 2026 d'origine ?")) {
       setTasks(INITIAL_TASKS);
       try {
-        localStorage.removeItem(LOCAL_STORAGE_KEY);
+        backup();
       } catch (e) {
         // ignore
       }
@@ -702,7 +513,7 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const otherMonthsTasks = prev.filter((t) => t.month !== month);
       const updated = [...otherMonthsTasks, ...initialForMonth];
       try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
+        backup();
       } catch (e) {
         // ignore
       }
@@ -774,6 +585,8 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
         activeShare,
         isLoadingShare,
         isCollaborativeSyncActive,
+        syncError,
+        exportBackup,
         lastSyncedAt,
         lastSyncAuthor,
         syncNotification,
@@ -796,6 +609,16 @@ export const TrackerProvider: React.FC<{ children: React.ReactNode }> = ({ child
       }}
     >
       {children}
+      {(!initialized.current || isLoadingShare) && (
+        <div className="fixed inset-0 z-[100] bg-slate-950/90 flex items-center justify-center p-5">
+          <div className="bg-white rounded-xl p-6 max-w-lg w-full text-slate-900 space-y-4">
+            <h2 className="text-lg font-bold">{isLoadingShare ? 'Chargement des données partagées…' : 'Données partagées indisponibles'}</h2>
+            <p>{syncError || 'Récupération de la même version sur tous vos appareils.'}</p>
+            {!isLoadingShare && <button onClick={syncNow} className="bg-indigo-700 text-white rounded px-4 py-2">Réessayer</button>}
+            <p className="text-sm text-slate-500">Les anciennes données de ce navigateur sont conservées. Aucune sauvegarde locale ne sera annoncée comme une sauvegarde cloud.</p>
+          </div>
+        </div>
+      )}
     </TrackerContext.Provider>
   );
 };

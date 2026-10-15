@@ -14,6 +14,9 @@ interface ActiveShareBannerProps {
 export const ActiveShareBanner: React.FC<ActiveShareBannerProps> = ({ onOpenShareModal }) => {
   const {
     activeShare,
+    syncError,
+    isCollaborativeSyncActive,
+    exportBackup,
     isLoadingShare,
     exitSharedView,
     lastSyncedAt,
@@ -30,6 +33,11 @@ export const ActiveShareBanner: React.FC<ActiveShareBannerProps> = ({ onOpenShar
 
   return (
     <>
+      <div className={`px-4 py-2 text-sm flex flex-wrap items-center gap-3 ${syncError ? 'bg-amber-100 text-amber-950' : 'bg-slate-100 text-slate-700'}`}>
+        <span role="status">{syncError || (isCollaborativeSyncActive ? `Espace partagé connecté${lastSyncedAt ? ` — synchronisé à ${lastSyncedAt}` : ''}` : 'Connexion en cours…')}</span>
+        <button onClick={syncNow} className="underline font-medium">Actualiser / Réessayer</button>
+        <button onClick={exportBackup} className="underline">Exporter une sauvegarde JSON</button>
+      </div>
       {/* Toast de bascule de rôle (ex: Basculer DE <-> Présidente) */}
       {roleSwitchNotification && (
         <div className="bg-slate-900 border-b border-indigo-500 text-white px-4 py-2 text-xs flex items-center justify-between shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">

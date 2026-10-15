@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrackerProvider, useTracker } from './context/TrackerContext';
+import { AccessGate } from './components/AccessGate';
 import { Navbar } from './components/Navbar';
 import { MonthlyEvaluationView } from './components/MonthlyEvaluationView';
 import { ReplanificationView } from './components/ReplanificationView';
@@ -158,8 +159,8 @@ const MainContent: React.FC = () => {
 
 export default function App() {
   return (
-    <TrackerProvider>
+    <AccessGate><TrackerProvider>
       <MainContent />
-    </TrackerProvider>
+    </TrackerProvider></AccessGate>
   );
 }
