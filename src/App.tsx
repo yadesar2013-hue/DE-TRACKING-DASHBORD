@@ -10,17 +10,21 @@ import { MonthlyEvaluationView } from './components/MonthlyEvaluationView';
 import { ReplanificationView } from './components/ReplanificationView';
 import { FinancialMobilizationView } from './components/FinancialMobilizationView';
 import { ExecutiveDashboardView } from './components/ExecutiveDashboardView';
+import { ObjectivesEvolutionView } from './components/ObjectivesEvolutionView';
 import { GoogleDriveModal } from './components/GoogleDriveModal';
 import { TaskEditModal } from './components/TaskEditModal';
+import { ShareModal } from './components/ShareModal';
+import { ActiveShareBanner } from './components/ActiveShareBanner';
 import { initAuth } from './services/googleDriveService';
 import { TaskItem } from './types';
 
 const MainContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<
-    'canevas' | 'replanification' | 'mobilisation' | 'dashboard' | 'drive'
+    'canevas' | 'replanification' | 'mobilisation' | 'dashboard' | 'objectifs' | 'drive'
   >('canevas');
   const [isDriveModalOpen, setIsDriveModalOpen] = useState<boolean>(false);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
   const [taskToEdit, setTaskToEdit] = useState<TaskItem | null>(null);
   const [driveUser, setDriveUser] = useState<any | null>(null);
 
@@ -56,8 +60,15 @@ const MainContent: React.FC = () => {
         }
       });
     } else {
-      // Ajout
-      addNewTask(taskData);
+      // Ajout tâche principale
+      const { companionTasks, ...mainTask } = taskData;
+      addNewTask(mainTask);
+      // Ajout automatique des sous-tâches de validation requises (TDR & rapport)
+      if (companionTasks && Array.isArray(companionTasks)) {
+        companionTasks.forEach((compTask: any) => {
+          addNewTask(compTask);
+        });
+      }
     }
   };
 
@@ -73,8 +84,12 @@ const MainContent: React.FC = () => {
           }
         }}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenShareModal={() => setIsShareModalOpen(true)}
         driveUser={driveUser}
       />
+
+      {/* Bandeau d'information si une version partagée est consultée */}
+      <ActiveShareBanner onOpenShareModal={() => setIsShareModalOpen(true)} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {currentTab === 'canevas' && (
@@ -82,6 +97,15 @@ const MainContent: React.FC = () => {
             onOpenAddTaskModal={handleOpenAddTaskModal}
             onEditTask={handleEditTask}
             onOpenDriveModal={() => setIsDriveModalOpen(true)}
+            onOpenShareModal={() => setIsShareModalOpen(true)}
+          />
+        )}
+
+        {currentTab === 'objectifs' && (
+          <ObjectivesEvolutionView
+            onNavigateToMonth={(month) => {
+              setCurrentTab('canevas');
+            }}
           />
         )}
 
@@ -91,7 +115,7 @@ const MainContent: React.FC = () => {
 
         {currentTab === 'dashboard' && (
           <ExecutiveDashboardView
-            onNavigateToTab={(tab) => setCurrentTab(tab)}
+            onNavigateToTab={(tab) => setCurrentTab(tab as any)}
           />
         )}
       </main>
@@ -100,10 +124,7 @@ const MainContent: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 py-6 mt-12 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div>
-            <strong className="text-slate-800">Fondation HYSTERESIS</strong> — Association à but non lucratif · Abomey-Calavi, Bénin
-          </div>
-          <div>
-            Contrat d'Objectifs et de Performance 2026 · Direction Exécutive & Présidence
+            <strong className="text-slate-800">Fondation HYSTERESIS</strong> — Cotonou, Bénin
           </div>
         </div>
       </footer>
@@ -125,6 +146,11 @@ const MainContent: React.FC = () => {
         taskToEdit={taskToEdit}
         defaultMonth={currentMonth}
         onSave={handleSaveTask}
+      />
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
       />
     </div>
   );

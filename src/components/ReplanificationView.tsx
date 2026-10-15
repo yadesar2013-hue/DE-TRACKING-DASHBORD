@@ -36,25 +36,55 @@ export const ReplanificationView: React.FC = () => {
     (t) => t.month >= 10 && t.month <= 12 && t.replanifiedToMonth
   );
 
-  // Jalons sanctuarisés
+  // Jalons sanctuarisés et dates clés
   const lockedMilestones = [
     {
-      title: "Lancement du programme 'Conversations Inspirantes'",
+      title: "Lancement 2e cohorte 'Conversations Inspirantes'",
       date: '6 Juin 2026',
       status: 'Accompli & Validé',
-      details: '74 participants certifiés, parité femmes respectée.',
+      details: '74 participants certifiés. Cadrage préalable : mail du sam. 30 mai à la pdh et commentaires.',
+    },
+    {
+      title: "Mise en conformité au Registre des Associations (Portail National des Services)",
+      date: '30 Juin & 31 Août 2026 (Attestation : 1er Septembre 2026)',
+      status: 'Accompli & Validé',
+      details: '1er dépôt le 30/06, 2e demande le 31/08. Attestation officielle délivrée le 1er septembre 2026.',
     },
     {
       title: "Journée de l'Excellence — Nouveau Standard",
-      date: '27 - 30 Août 2026',
+      date: '28 - 30 Août 2026',
       status: 'Accompli & Validé',
-      details: '30 lauréats Borgou primés, 400 élèves dotés (Nikki, Kalalé, Sinendé, Bembèrèkè).',
+      details: 'Tenue effective à Parakou : 30 lauréats Borgou primés, 400 élèves dotés de kits scolaires.',
     },
     {
-      title: "Sortie de la Cohorte 2 'Conversations Inspirantes'",
+      title: "Sortie de la 2e Cohorte 'Conversations Inspirantes'",
       date: '24 Octobre 2026',
-      status: 'Prévu fermement',
-      details: '50 nouveaux jeunes certifiés, clôture de la cohorte.',
+      status: 'Jalon Contractuel T4',
+      details: 'Cérémonie de remise des diplômes, au moins 50 lauréats certifiés, parité femmes respectée.',
+    },
+    {
+      title: "Lancement de la 3e Cohorte 'Conversations Inspirantes' (PCI3)",
+      date: '26 Octobre 2026',
+      status: 'Jalon Contractuel T4',
+      details: 'Appel à candidatures officiel pour la cohorte 3 ; proclamation des résultats le 13 novembre 2026.',
+    },
+    {
+      title: "Prochain Conseil d'Administration (CA)",
+      date: '31 Octobre 2026',
+      status: 'Session Statutaire T4',
+      details: 'Examen des performances T1-T3, présentation de l\'Attestation du 01/09 et feuille de route T4.',
+    },
+    {
+      title: "Proclamation des résultats de la 3e Cohorte (PCI3)",
+      date: '13 Novembre 2026',
+      status: 'Jalon Contractuel T4',
+      details: 'Délibération du jury et proclamation officielle des lauréats sélectionnés pour PCI3.',
+    },
+    {
+      title: "Mobilisation des 100M FCFA étalée sur le T4",
+      date: 'Octobre à Décembre 2026',
+      status: 'Trajectoire COP T4',
+      details: '0 FCFA mobilisé jusqu\'ici. Étalement COP : 25M en Octobre, 35M en Novembre, 40M en Décembre.',
     },
   ];
 
