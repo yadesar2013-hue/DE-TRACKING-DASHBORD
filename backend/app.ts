@@ -1,7 +1,7 @@
-import express from 'express';
+﻿import express from 'express';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { INITIAL_TASKS } from '../src/data/initialTasks';
-import { readRecord, compareAndSet, deleteRecord } from './storage';
+import { INITIAL_TASKS } from '../src/data/initialTasks.js';
+import { readRecord, compareAndSet, deleteRecord } from './storage.js';
 
 export const app = express();
 app.disable('x-powered-by');
@@ -110,3 +110,4 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(err.status === 413 ? 413 : 503).json({ success: false, message: err.status === 413 ? 'Fichier trop volumineux (3 Mo maximum).' : err.message || 'Service partagé indisponible.' });
 });
 export default app;
+

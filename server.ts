@@ -1,5 +1,5 @@
-import 'dotenv/config';
-import app from './backend/app';
+﻿import 'dotenv/config';
+import app from './backend/app.js';
 import express from 'express';
 import path from 'node:path';
 
@@ -15,3 +15,4 @@ async function startServer() {
   app.listen(Number(process.env.PORT || 3000), '0.0.0.0', () => console.log(`Tracker : http://localhost:${process.env.PORT || 3000}`));
 }
 startServer().catch(console.error);
+
